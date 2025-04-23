@@ -502,6 +502,12 @@ if [ "$SECURITY_GROUP_ID" = "None" ] || [ -z "$SECURITY_GROUP_ID" ]; then
     --description "Security group allowing SSH (22), HTTPS (443), and port 3000" \
     --query "GroupId" --output text)
 
+  # Ensure that the security group is created successfully
+  if [ $? -ne 0 ]; then
+    echo "Error creating security group."
+    exit 1
+  fi
+
   aws ec2 authorize-security-group-ingress --region "$REGION" \
     --group-id "$SECURITY_GROUP_ID" --protocol tcp --port 22 --cidr 0.0.0.0/0
 
