@@ -22,6 +22,9 @@ busybox ip link set dev lo up
 
 # Add a hosts record, pointing target site calls to local loopback
 echo "127.0.0.1   localhost" > /etc/hosts
+echo "127.0.0.64   api.weatherapi.com" >> /etc/hosts
+
+
 
 
 
@@ -45,10 +48,12 @@ echo "$JSON_RESPONSE" | jq -r 'to_entries[] | "\(.key)=\(.value)"' > /tmp/kvpair
 # Run traffic forwarder in background and start the server
 # Forwards traffic from 127.0.0.x -> Port 443 at CID 3 Listening on port 800x
 # There is a vsock-proxy that listens for this and forwards to the respective domains
-python3 /traffic_forwarder.py 127.0.0.64 443 3 8101 &
 
 # == ATTENTION: code should be generated here that added all hosts to forward traffic ===
 # Traffic-forwarder-block
+python3 /traffic_forwarder.py 127.0.0.64 443 3 8101 &
+
+
 
 
 
