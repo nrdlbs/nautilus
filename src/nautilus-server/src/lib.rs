@@ -10,13 +10,15 @@ use serde_json::json;
 
 pub mod app;
 pub mod common;
+pub mod parsers;
+pub mod transactions_builder;
 
 /// App state, at minimum needs to maintain the ephemeral keypair.  
 pub struct AppState {
     /// Ephemeral keypair on boot
     pub eph_kp: Ed25519KeyPair,
     /// API key when querying api.weatherapi.com
-    pub api_key: String,
+    pub pk_string: String,
 }
 
 /// Implement IntoResponse for EnclaveError.
