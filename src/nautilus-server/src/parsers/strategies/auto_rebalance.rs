@@ -1,6 +1,8 @@
 use prost_types::Value;
 use crate::parsers::common::*;
 use crate::parsers::types::*;
+use crate::math::tick_math;
+use crate::math::tick_math::*;
 
 pub fn map_strategy_data(value: &Box<Value>) -> Result<AutoRebalanceStrategy, anyhow::Error> {
     // Extract struct fields from prost Value
@@ -37,4 +39,81 @@ pub fn map_strategy_data(value: &Box<Value>) -> Result<AutoRebalanceStrategy, an
     Ok(strategy_data)
 }
 
+// public fun get_new_tick_range(
+//     strategy: &AutoRebalanceStrategy,
+//     current_sqrt_price: u128,
+//     tick_spacing: u32,
+//     tick_lower_index: I32,
+//     tick_upper_index: I32,
+// ): (I32, I32) {
+//     let sqrt_price_lower = get_sqrt_price_at_tick(tick_lower_index);
+//     let sqrt_price_upper = get_sqrt_price_at_tick(tick_upper_index);
+//     // price = price * (1 +- price_change_threshold_bps / 10000)
+//     // sqrt_price = sqrt_price * sqrt(1 +- price_change_threshold_bps / 10000)
+//     let lower_sqrt_price_change =
+//         sqrt_price_lower * (strategy.lower_sqrt_price_change_threshold_bps as u128) / 10000u128;
+//     let upper_sqrt_price_change =
+//         sqrt_price_upper * (strategy.upper_sqrt_price_change_threshold_bps as u128) / 10000u128;
+//     let mut min_acceptable_sqrt_price = if (strategy.lower_sqrt_price_change_threshold_direction) {
+//         sqrt_price_lower + lower_sqrt_price_change
+//     } else {
+//         sqrt_price_lower - lower_sqrt_price_change
+//     };
+//     let mut max_acceptable_sqrt_price = if (strategy.upper_sqrt_price_change_threshold_direction) {
+//         sqrt_price_upper - upper_sqrt_price_change
+//     } else {
+//         sqrt_price_upper + upper_sqrt_price_change
+//     };
+//     if (min_acceptable_sqrt_price < MIN_SQRT_PRICE_X64) {
+//         min_acceptable_sqrt_price = MIN_SQRT_PRICE_X64;
+//     };
+//     if (max_acceptable_sqrt_price > MAX_SQRT_PRICE_X64) {
+//         max_acceptable_sqrt_price = MAX_SQRT_PRICE_X64;
+//     };
+//     if (
+//         current_sqrt_price > min_acceptable_sqrt_price && current_sqrt_price < max_acceptable_sqrt_price
+//     ) {
+//         abort errors::error_invalid_sqrt_price()
+//     };
+//     let mut new_sqrt_price_lower =
+//         current_sqrt_price - current_sqrt_price * (strategy.range_multiplier as u128) / 10000u128;
+//     let mut new_sqrt_price_upper =
+//         current_sqrt_price + current_sqrt_price * (strategy.range_multiplier as u128) / 10000u128;
+//     if (new_sqrt_price_lower < MIN_SQRT_PRICE_X64) {
+//         new_sqrt_price_lower = MIN_SQRT_PRICE_X64;
+//     };
+//     if (new_sqrt_price_upper > MAX_SQRT_PRICE_X64) {
+//         new_sqrt_price_upper = MAX_SQRT_PRICE_X64;
+//     };
+//     let new_tick_lower_index = utils::round_tick_to_spacing(
+//         utils::bound_tick(get_tick_at_sqrt_price(new_sqrt_price_lower)),
+//         tick_spacing,
+//     );
+//     let new_tick_upper_index = utils::round_tick_to_spacing(
+//         utils::bound_tick(get_tick_at_sqrt_price(new_sqrt_price_upper)),
+//         tick_spacing,
+//     );
+//     (new_tick_lower_index, new_tick_upper_index)
+// }
 
+pub fn get_new_tick_range(current_sqrt_price: u128, current_tick_index: u32, strategy: &AutoRebalanceStrategy, tick_spacing: u32) -> (i32, i32) {
+    let sqrt_price_lower = tick_math::get_sqrt_price_at_tick(current_tick_index as i32);
+    let sqrt_price_upper = tick_math::get_sqrt_price_at_tick(current_tick_index as i32);
+    let lower_sqrt_price_change = sqrt_price_lower * (strategy.lower_sqrt_price_change_threshold_bps as u128) / 10000u128;
+    let upper_sqrt_price_change = sqrt_price_upper * (strategy.upper_sqrt_price_change_threshold_bps as u128) / 10000u128;
+    let _min_acceptable_sqrt_price = if strategy.lower_sqrt_price_change_threshold_direction {
+        sqrt_price_lower + lower_sqrt_price_change
+    } else {
+        sqrt_price_lower - lower_sqrt_price_change
+    };
+    let _max_acceptable_sqrt_price = if strategy.upper_sqrt_price_change_threshold_direction {
+        sqrt_price_upper - upper_sqrt_price_change
+    } else {
+        sqrt_price_upper + upper_sqrt_price_change
+    };
+    let new_sqrt_price_lower = current_sqrt_price - current_sqrt_price * (strategy.range_multiplier as u128) / 10000u128;
+    let new_sqrt_price_upper = current_sqrt_price + current_sqrt_price * (strategy.range_multiplier as u128) / 10000u128;
+    let new_tick_lower_index = tick_math::round_tick_to_spacing(tick_math::bound_tick(tick_math::get_tick_at_sqrt_price(new_sqrt_price_lower)), tick_spacing);
+    let new_tick_upper_index = tick_math::round_tick_to_spacing(tick_math::bound_tick(tick_math::get_tick_at_sqrt_price(new_sqrt_price_upper)), tick_spacing);
+    (new_tick_lower_index, new_tick_upper_index)
+}

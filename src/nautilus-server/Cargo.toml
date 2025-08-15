@@ -39,3 +39,5 @@ tonic = { version = "0.13", default-features = false, features = ["channel", "co
 base64ct = { version = "1.6.0", features = ["alloc", "std"] }
 thiserror = "2.0.14"
 cynic = "3.11.0"
+num-bigint = "0.4.6"
+num-traits = "0.2.19"

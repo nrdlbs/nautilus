@@ -1960,6 +1960,8 @@ dependencies = [
  "bech32 0.11.0",
  "cynic",
  "fastcrypto",
+ "num-bigint",
+ "num-traits",
  "prost",
  "prost-types",
  "rand 0.8.5",

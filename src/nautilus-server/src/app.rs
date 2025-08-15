@@ -105,15 +105,19 @@ pub async fn process_data_v2(
     );
 
     let tx = match &request {
-        parsers::Request::Rebalance(rebalance_req) => dex_tx_builder.rebalance(
-            rebalance_req.clone(),
-            rebalance_req.tick_lower_index_u32,
-            rebalance_req.tick_upper_index_u32,
-            position_registry_id,
-            dex,
-            signed_data.signature.clone().into_bytes(),
-            current_timestamp,
-        ).await,
+        parsers::Request::Rebalance(rebalance_req) => {
+            let tick_lower_index = rebalance_req.tick_lower_index_u32;
+            let tick_upper_index = rebalance_req.tick_upper_index_u32;
+            dex_tx_builder.rebalance(
+                rebalance_req.clone(),
+                tick_lower_index,
+                tick_upper_index,
+                position_registry_id,
+                dex,
+                signed_data.signature.clone().into_bytes(),
+                current_timestamp,
+            ).await
+        }
         parsers::Request::Compound(compound_req) => dex_tx_builder.compound(
             compound_req.clone(),
             dex,
@@ -139,4 +143,27 @@ pub async fn process_data_v2(
     }
 
     Ok(())
+}
+
+mod test {
+    use super::*;
+    use fastcrypto::ed25519::Ed25519KeyPair;
+    use rand::rngs::OsRng;
+    use fastcrypto::traits::KeyPair;
+
+    #[tokio::test]
+    async fn test_process_data_v2() {
+        let eph_kp = Ed25519KeyPair::generate(&mut rand::thread_rng());
+        let state = AppState {
+            eph_kp: eph_kp,
+            pk_string: "".to_string(),
+        };
+        let request = ProcessDataRequest::<TransactionRequest> {
+            payload: TransactionRequest {
+                pool_id: "0x1".to_string(),
+                strategy_id: "0x2".to_string(),
+            },
+        };
+        process_data_v2(State(Arc::new(state)), Json(request)).await.unwrap();
+    }
 }

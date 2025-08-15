@@ -10,6 +10,7 @@ use serde_json::json;
 
 pub mod app;
 pub mod common;
+pub mod math;
 pub mod parsers;
 pub mod transactions_builder;
 
