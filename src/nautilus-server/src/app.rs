@@ -84,9 +84,10 @@ pub async fn process_data_v2(
         .map_err(|e| EnclaveError::GenericError(format!("Failed to get object: {}", e)))?;
     let strategy_object = strategy_data.into_inner().object.unwrap();
 
-    let (request, dex, position_registry_id) = parsers::into_request(&mut graphql_client, pool_object, strategy_object)
-        .await
-        .map_err(|e| EnclaveError::GenericError(format!("Failed to handle object: {}", e)))?;
+    let processed_pool_data =
+        parsers::into_processed_pool_data(&mut graphql_client, pool_object, strategy_object)
+            .await
+            .map_err(|e| EnclaveError::GenericError(format!("Failed to handle object: {}", e)))?;
     let current_timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_err(|e| EnclaveError::GenericError(format!("Failed to get current timestamp: {}", e)))?
@@ -98,42 +99,68 @@ pub async fn process_data_v2(
     let signed_data = to_signed_response(
         &state.eph_kp,
         TransactionResponse {
-            request: request.clone(),
+            request: processed_pool_data.request.clone(),
         },
         current_timestamp,
         IntentScope::Transaction,
     );
 
-    let tx = match &request {
+    let tx = match &processed_pool_data.request {
         parsers::Request::Rebalance(rebalance_req) => {
-            let tick_lower_index = rebalance_req.tick_lower_index_u32;
-            let tick_upper_index = rebalance_req.tick_upper_index_u32;
-            dex_tx_builder.rebalance(
-                rebalance_req.clone(),
-                tick_lower_index,
-                tick_upper_index,
-                position_registry_id,
-                dex,
-                signed_data.signature.clone().into_bytes(),
-                current_timestamp,
-            ).await
+            let strategy = processed_pool_data.auto_rebalance_strategy.as_ref().unwrap();
+            let (tick_lower_index_i32, tick_upper_index_i32) =
+                parsers::strategies::auto_rebalance::get_new_tick_range(
+                    rebalance_req.current_sqrt_price,
+                    rebalance_req.current_tick_u32,
+                    strategy.lower_sqrt_price_change_threshold_bps,
+                    strategy.upper_sqrt_price_change_threshold_bps,
+                    strategy.lower_sqrt_price_change_threshold_direction,
+                    strategy.upper_sqrt_price_change_threshold_direction,
+                    strategy.range_multiplier,
+                    rebalance_req.tick_spacing,
+                )
+                .map_err(|e| {
+                    EnclaveError::GenericError(format!("Failed to get new tick range: {}", e))
+                })?;
+            // convert to u32, if negative, add 2^32
+            let tick_lower_index = if tick_lower_index_i32 < 0 {
+                (tick_lower_index_i32 + 2i32.pow(32)) as u32
+            } else {
+                tick_lower_index_i32 as u32
+            };
+            let tick_upper_index = if tick_upper_index_i32 < 0 {
+                (tick_upper_index_i32 + 2i32.pow(32)) as u32
+            } else {
+                tick_upper_index_i32 as u32
+            };
+            dex_tx_builder
+                .rebalance(
+                    rebalance_req.clone(),
+                    tick_lower_index,
+                    tick_upper_index,
+                    processed_pool_data.position_registry_id,
+                    processed_pool_data.dex,
+                    signed_data.signature.clone().into_bytes(),
+                    current_timestamp,
+                )
+                .await
         }
-        parsers::Request::Compound(compound_req) => dex_tx_builder.compound(
-            compound_req.clone(),
-            dex,
-            signed_data.signature.clone().into_bytes(),
-        ).await,
+        parsers::Request::Compound(compound_req) => {
+            dex_tx_builder
+                .compound(
+                    compound_req.clone(),
+                    processed_pool_data.dex,
+                    signed_data.signature.clone().into_bytes(),
+                )
+                .await
+        }
     };
 
     match helper::execute_and_wait_for_effects(&graphql_client, tx, &kp, true, None).await {
         Ok(effects) => {
             let transaction_digest = match effects {
-                TransactionEffects::V1(effects) => {
-                    effects.transaction_digest
-                }
-                TransactionEffects::V2(effects) => {
-                    effects.transaction_digest
-                }
+                TransactionEffects::V1(effects) => effects.transaction_digest,
+                TransactionEffects::V2(effects) => effects.transaction_digest,
             };
             println!("transaction_digest: {:?}", transaction_digest);
         }
@@ -148,8 +175,8 @@ pub async fn process_data_v2(
 mod test {
     use super::*;
     use fastcrypto::ed25519::Ed25519KeyPair;
-    use rand::rngs::OsRng;
     use fastcrypto::traits::KeyPair;
+    use rand::rngs::OsRng;
 
     #[tokio::test]
     async fn test_process_data_v2() {
@@ -164,6 +191,8 @@ mod test {
                 strategy_id: "0x2".to_string(),
             },
         };
-        process_data_v2(State(Arc::new(state)), Json(request)).await.unwrap();
+        process_data_v2(State(Arc::new(state)), Json(request))
+            .await
+            .unwrap();
     }
 }

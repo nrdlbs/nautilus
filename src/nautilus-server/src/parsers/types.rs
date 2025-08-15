@@ -26,6 +26,14 @@ pub enum Request {
     Compound(CompoundRequest),
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ProcessedPoolData {
+    pub request: Request,
+    pub auto_rebalance_strategy: Option<AutoRebalanceStrategy>,
+    pub dex: SupportedDex,
+    pub position_registry_id: u64,
+}
+
 // ============================================================================
 // POOL TYPES
 // ============================================================================
@@ -194,7 +202,7 @@ pub struct I32Wrapper {
     pub bits: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum SupportedDex {
     MMT,
     Bluefin,

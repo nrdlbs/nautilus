@@ -22,11 +22,13 @@ pub mod types;
 
 pub use types::{SupportedDex, *};
 
-pub async fn into_request<'a>(
+const BAG_OBJECT_ID: &str = "0x47f27839b9cbb864bf9a93223eb7c97aee04788fc2603edf56200909aa672ca8";
+
+pub async fn into_processed_pool_data<'a>(
     graphql_client: &'a mut GraphQLClient,
     pool_object: Object,
     strategy_object: Object,
-) -> Result<(Request, SupportedDex, u64), anyhow::Error> {
+) -> Result<(ProcessedPoolData), anyhow::Error> {
     let pool_json = pool_object.json.unwrap();
     let strategy_json = strategy_object.json.unwrap();
 
@@ -37,10 +39,11 @@ pub async fn into_request<'a>(
         Strategy::AutoRebalance(auto_rebalance) => auto_rebalance.position_registry_id,
         _ => return Err(anyhow::anyhow!("Unknown strategy type")),
     };
+    
     // filter out
     let position_field = graphql_client
         .dynamic_field(
-            Address::from_hex("0x47f27839b9cbb864bf9a93223eb7c97aee04788fc2603edf56200909aa672ca8")
+            Address::from_hex(BAG_OBJECT_ID)
                 .unwrap(),
             TypeTag::U64,
             position_registry_id,
@@ -71,7 +74,7 @@ pub async fn into_request<'a>(
     };
 
     // Create request based on strategy type and pool type
-    let request = match strategy_data {
+    let request = match &strategy_data {
         Strategy::AutoRebalance(_auto_rebalance) => Request::Rebalance(RebalanceRequest {
             strategy_id: strategy_object.object_id.unwrap_or_default(),
             current_tick_u32: current_tick as u32,
@@ -85,5 +88,15 @@ pub async fn into_request<'a>(
 
     println!("request: {:?}", request);
 
-    Ok((request, dex, position_registry_id))
+    let auto_rebalance_strategy = match &strategy_data {
+        Strategy::AutoRebalance(auto_rebalance) => Some(auto_rebalance.clone()),
+        _ => None,
+    };
+
+    Ok(ProcessedPoolData {
+        auto_rebalance_strategy,
+        request,
+        dex,
+        position_registry_id,
+    })
 }
