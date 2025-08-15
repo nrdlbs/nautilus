@@ -86,6 +86,8 @@ pub async fn execute_and_wait_for_effects(
     client: &Client,
     builder: TransactionBuilder,
     pk: &Ed25519PrivateKey,
+    dry_run: bool,
+    skip_checks: Option<bool>,
 ) -> Result<TransactionEffects> {
     let tx = builder
         .finish()
@@ -93,6 +95,15 @@ pub async fn execute_and_wait_for_effects(
     let sig = pk
         .sign_transaction(&tx)
         .map_err(|e| SuiUtilsError::TransactionSigningError(e.to_string()))?;
+
+    if dry_run {
+        let result = client.dry_run_tx(&tx, skip_checks).await?;
+        if let Some(effects) = result.effects {
+            return Ok(effects);
+        } else {
+            return Err(SuiUtilsError::TransactionExecutionError("Dry run failed".to_string()));
+        }
+    }
 
     let effects = client.execute_tx(vec![sig], &tx).await?;
     // wait for the transaction to be finalized with timeout

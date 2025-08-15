@@ -1,3 +1,5 @@
 # External endpoints that the enclave is allowed to access. 
 endpoints:
   - api.weatherapi.com # replace with your own endpoints
+  - https://fullnode.mainnet.sui.io:443
+  - https://sui-mainnet.mystenlabs.com/graphql

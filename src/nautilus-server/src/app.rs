@@ -84,7 +84,7 @@ pub async fn process_data_v2(
         .map_err(|e| EnclaveError::GenericError(format!("Failed to get object: {}", e)))?;
     let strategy_object = strategy_data.into_inner().object.unwrap();
 
-    let (request, dex) = parsers::into_request(&mut graphql_client, pool_object, strategy_object)
+    let (request, dex, position_registry_id) = parsers::into_request(&mut graphql_client, pool_object, strategy_object)
         .await
         .map_err(|e| EnclaveError::GenericError(format!("Failed to handle object: {}", e)))?;
     let current_timestamp = std::time::SystemTime::now()
@@ -109,6 +109,7 @@ pub async fn process_data_v2(
             rebalance_req.clone(),
             rebalance_req.tick_lower_index_u32,
             rebalance_req.tick_upper_index_u32,
+            position_registry_id,
             dex,
             signed_data.signature.clone().into_bytes(),
             current_timestamp,
@@ -120,7 +121,7 @@ pub async fn process_data_v2(
         ).await,
     };
 
-    match helper::execute_and_wait_for_effects(&graphql_client, tx, &kp).await {
+    match helper::execute_and_wait_for_effects(&graphql_client, tx, &kp, true, None).await {
         Ok(effects) => {
             let transaction_digest = match effects {
                 TransactionEffects::V1(effects) => {

@@ -41,6 +41,7 @@ impl<'a> DexTransactionBuilder<'a> {
         request: RebalanceRequest,
         new_tick_lower_index: u32,
         new_tick_upper_index: u32,
+        position_registry_id: u64,
         dex: SupportedDex,
         signature: Vec<u8>,
         timestamp_ms: u64,
@@ -95,6 +96,21 @@ impl<'a> DexTransactionBuilder<'a> {
                 vec![],
             ),
             vec![tick_upper_index_arg],
+        );
+        let position_registry_id_arg = argument::pure(&mut self.tx, position_registry_id).unwrap();
+
+        self.tx.move_call(
+            Function::new(
+                Address::from_hex(KURAGE_PACKAGE_ID).unwrap(),
+                Identifier::new("registry").unwrap(),
+                Identifier::new("return_position").unwrap(),
+                vec![TypeTag::Struct(Box::new(StructTag::from_str(pos_type).unwrap()))],
+            ),
+            vec![
+                registry_arg,
+                pos,
+                position_registry_id_arg,
+            ],
         );
 
         self.tx.move_call(

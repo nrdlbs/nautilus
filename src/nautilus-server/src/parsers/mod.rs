@@ -26,7 +26,7 @@ pub async fn into_request<'a>(
     graphql_client: &'a mut GraphQLClient,
     pool_object: Object,
     strategy_object: Object,
-) -> Result<(Request, SupportedDex), anyhow::Error> {
+) -> Result<(Request, SupportedDex, u64), anyhow::Error> {
     let pool_json = pool_object.json.unwrap();
     let strategy_json = strategy_object.json.unwrap();
 
@@ -85,5 +85,5 @@ pub async fn into_request<'a>(
 
     println!("request: {:?}", request);
 
-    Ok((request, dex))
+    Ok((request, dex, position_registry_id))
 }
