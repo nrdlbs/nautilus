@@ -109,6 +109,8 @@ pub async fn process_data_v2(
         IntentScope::Transaction,
     );
 
+    println!("signed_data: {:?}", signed_data.signature);
+
     let tx = match &processed_pool_data.request {
         parsers::Request::Rebalance(rebalance_req) => {
             let strategy = processed_pool_data
