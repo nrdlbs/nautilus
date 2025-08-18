@@ -91,10 +91,8 @@ impl<'a> DexTransactionBuilder<'a> {
 
         let (tx, position) = match dex {
             SupportedDex::Cetus => {
-                let zap_in_request = cetus::ZapInRequest::new(pos.clone(), receipt.clone(), pool_id.clone(), coin_a_type.clone(), coin_b_type.clone(), request.tick_lower_index_u32, request.tick_upper_index_u32);
-                let zap_out_request = cetus::ZapOutRequest::new(pos.clone(), pool_id.clone(), coin_a_type.clone(), coin_b_type.clone());
                 cetus::CetusTransactionBuilder::new(self.client)
-                    .rebalance(self.tx, zap_in_request, zap_out_request)
+                    .rebalance(self.tx, cetus::RebalanceData::new(pos.clone(), pool_id.clone(), coin_a_type.clone(), coin_b_type.clone(), request.tick_lower_index_u32, request.tick_upper_index_u32))
                     .await
             }
             _ => panic!("Unsupported dex"),

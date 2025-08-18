@@ -41,6 +41,22 @@ impl ZapInRequest {
     }
 }
 
+pub struct RebalanceData {
+    pub position: Argument,
+    pub pool_id: String,
+    pub coin_a_type: TypeTag,
+    pub coin_b_type: TypeTag,
+    pub tick_lower_index: u32,
+    pub tick_upper_index: u32,
+}
+
+impl RebalanceData {
+    pub fn new(position: Argument, pool_id: String, coin_a_type: TypeTag, coin_b_type: TypeTag, tick_lower_index: u32, tick_upper_index: u32) -> Self {
+        Self { position, pool_id, coin_a_type, coin_b_type, tick_lower_index, tick_upper_index }
+    }
+}
+
+
 const CETUS_INTEGRATE_PACKAGE_ID: &str = "0xb2db7142fa83210a7d78d9c12ac49c043b3cbbd482224fea6e3da00aa5a5ae2d";
 const CETUS_PACKAGE_ID: &str = "0x75b2e9ecad34944b8d0c874e568c90db0cf9437f0d7392abfd4cb902972f3e40";
 const GLOBAL_CONFIG_PACKAGE_ID: &str = "0xdaa46292632c3c4d8f31f23ea0f9b36a28ff3677e9684980e4438403a67a3d8f";
@@ -107,8 +123,10 @@ impl<'a> CetusTransactionBuilder<'a> {
         (tx, position)
     }
 
-    pub async fn rebalance(self, tx: TransactionBuilder, zap_in_request: ZapInRequest, zap_out_request: ZapOutRequest) -> (TransactionBuilder, Argument) {
+    pub async fn rebalance(self, tx: TransactionBuilder, rebalance_data: RebalanceData) -> (TransactionBuilder, Argument) {
+        let zap_out_request = ZapOutRequest::new(rebalance_data.position, rebalance_data.pool_id.clone(), rebalance_data.coin_a_type.clone(), rebalance_data.coin_b_type.clone());
         let (tx, coin_a, coin_b) = self.zap_out(tx, zap_out_request).await;
+        let zap_in_request = ZapInRequest::new(coin_a, coin_b, rebalance_data.pool_id.clone(), rebalance_data.coin_a_type.clone(), rebalance_data.coin_b_type.clone(), rebalance_data.tick_lower_index, rebalance_data.tick_upper_index);
         let (tx, position) = self.zap_in(tx, zap_in_request).await;
         (tx, position)
     }
