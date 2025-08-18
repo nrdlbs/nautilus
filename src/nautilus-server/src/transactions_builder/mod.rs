@@ -86,13 +86,13 @@ impl<'a> DexTransactionBuilder<'a> {
             vec![registry_arg, strategy_arg, enclave_arg, timestamp_arg, construct_req, signature_arg, clock_arg],
         );
 
-        let mut pos = prepare_rebalance_data.nested(0).unwrap();
-        let mut receipt = prepare_rebalance_data.nested(1).unwrap();
+        let pos = prepare_rebalance_data.nested(0).unwrap();
+        let receipt = prepare_rebalance_data.nested(1).unwrap();
 
         let (tx, position) = match dex {
             SupportedDex::Cetus => {
                 cetus::CetusTransactionBuilder::new(self.client)
-                    .rebalance(self.tx, cetus::RebalanceData::new(pos.clone(), pool_id.clone(), coin_a_type.clone(), coin_b_type.clone(), request.tick_lower_index_u32, request.tick_upper_index_u32))
+                    .rebalance(self.tx, cetus::RebalanceData::new(pos, pool_id.clone(), coin_a_type.clone(), coin_b_type.clone(), request.tick_lower_index_u32, request.tick_upper_index_u32))
                     .await
             }
             _ => panic!("Unsupported dex"),
