@@ -73,7 +73,6 @@ impl<'a> CetusTransactionBuilder<'a> {
 
     pub async fn zap_out(&self, mut tx: TransactionBuilder, request: ZapOutRequest) -> (TransactionBuilder, Argument, Argument) {
         let pool_arg = argument::shared_mut(&self.client, &mut tx, Address::from_hex(request.pool_id).unwrap()).await.unwrap();
-        let position_arg = argument::pure(&mut tx, request.position).unwrap();
         let global_config_arg = argument::shared_ref(&self.client, &mut tx, Address::from_hex(GLOBAL_CONFIG_PACKAGE_ID).unwrap()).await.unwrap();
         let true_arg = argument::pure(&mut tx, true).unwrap();
         let clock_arg = argument::shared_ref(&self.client, &mut tx, Address::from_hex(CLOCK_OBJECT_ID).unwrap()).await.unwrap();
@@ -85,15 +84,13 @@ impl<'a> CetusTransactionBuilder<'a> {
                 Identifier::new("close_position_with_return").unwrap(),
                 vec![request.coin_a_type, request.coin_b_type],
             ),
-            vec![global_config_arg, pool_arg, position_arg, true_arg, clock_arg],
+            vec![global_config_arg, pool_arg, request.position, true_arg, clock_arg],
         );
         (tx, result.nested(0).unwrap(), result.nested(1).unwrap())
     }
 
     pub async fn zap_in(&self, mut tx: TransactionBuilder, request: ZapInRequest) -> (TransactionBuilder, Argument) {
         let pool_arg = argument::shared_mut(&self.client, &mut tx, Address::from_hex(request.pool_id).unwrap()).await.unwrap();
-        let coin_a_arg = argument::pure(&mut tx, request.coin_a).unwrap();
-        let coin_b_arg = argument::pure(&mut tx, request.coin_b).unwrap();
         let tick_lower_index_arg = argument::pure(&mut tx, request.tick_lower_index).unwrap();
         let tick_upper_index_arg = argument::pure(&mut tx, request.tick_upper_index).unwrap();
         let global_config_arg = argument::shared_ref(&self.client, &mut tx, Address::from_hex(GLOBAL_CONFIG_PACKAGE_ID).unwrap()).await.unwrap();
@@ -118,7 +115,7 @@ impl<'a> CetusTransactionBuilder<'a> {
                 Identifier::new("add_liquidity_by_fix_coin").unwrap(),
                 vec![request.coin_a_type, request.coin_b_type],
             ),
-            vec![global_config_arg, pool_arg, position, coin_a_arg, coin_b_arg, max_amount_arg, max_amount_arg, true_arg, clock_arg],
+            vec![global_config_arg, pool_arg, position, request.coin_a, request.coin_b, max_amount_arg, max_amount_arg, true_arg, clock_arg],
         );
         (tx, position)
     }
