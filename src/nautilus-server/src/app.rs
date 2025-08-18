@@ -142,6 +142,9 @@ pub async fn process_data_v2(
             dex_tx_builder
                 .rebalance(
                     rebalance_req.clone(),
+                    request.payload.pool_id.clone(),
+                    processed_pool_data.coin_a_type,
+                    processed_pool_data.coin_b_type,
                     tick_lower_index,
                     tick_upper_index,
                     processed_pool_data.position_registry_id,

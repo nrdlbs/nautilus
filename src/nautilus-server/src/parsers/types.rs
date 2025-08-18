@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use sui_sdk_types::TypeTag;
 
 // ============================================================================
 // REQUEST TYPES
@@ -32,6 +33,8 @@ pub struct ProcessedPoolData {
     pub auto_rebalance_strategy: Option<AutoRebalanceStrategy>,
     pub dex: SupportedDex,
     pub position_registry_id: u64,
+    pub coin_a_type: TypeTag,
+    pub coin_b_type: TypeTag,
 }
 
 // ============================================================================

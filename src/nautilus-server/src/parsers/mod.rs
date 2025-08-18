@@ -11,6 +11,8 @@ use sui_rpc::proto::sui::rpc::v2beta2::ListDynamicFieldsRequest;
 use sui_rpc::proto::sui::rpc::v2beta2::Object;
 use sui_sdk_types::Address;
 use sui_sdk_types::TypeTag;
+use sui_sdk_types::StructTag;
+use std::str::FromStr;
 use tonic::codegen::InterceptedService;
 use tonic::transport::Channel;
 
@@ -66,10 +68,12 @@ pub async fn into_processed_pool_data<'a>(
             ),
         };
 
-    let (tick_lower, tick_upper) = match position_data {
+    let (tick_lower, tick_upper, coin_a_type, coin_b_type) = match position_data {
         Position::Cetus(cetus_position) => (
             cetus_position.tick_lower_index.bits.parse::<u32>()?,
             cetus_position.tick_upper_index.bits.parse::<u32>()?,
+            TypeTag::Struct(Box::new(StructTag::from_str(&cetus_position.coin_type_a.name).unwrap())),
+            TypeTag::Struct(Box::new(StructTag::from_str(&cetus_position.coin_type_b.name).unwrap())),
         ),
     };
 
@@ -98,5 +102,7 @@ pub async fn into_processed_pool_data<'a>(
         request,
         dex,
         position_registry_id,
+        coin_a_type,
+        coin_b_type,
     })
 }
