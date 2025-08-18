@@ -113,9 +113,14 @@ pub fn map_strategy_data(value: &Box<Value>) -> Result<AutoRebalanceStrategy, an
 //     (new_tick_lower_index, new_tick_upper_index)
 // }
 
+const MAX_SQRT_PRICE_X64: u128 = 79226673515401279992447579055;
+const MIN_SQRT_PRICE_X64: u128 = 4295048016;
+
 pub fn get_new_tick_range(
     current_sqrt_price: u128,
     current_tick_index: u32,
+    position_lower_tick: i32,
+    position_upper_tick: i32,
     lower_sqrt_price_change_threshold_bps: u64,
     upper_sqrt_price_change_threshold_bps: u64,
     lower_sqrt_price_change_threshold_direction: bool,
@@ -123,8 +128,31 @@ pub fn get_new_tick_range(
     range_multiplier_bps: u64,
     tick_spacing: u32,
 ) -> Result<(i32, i32), anyhow::Error> {
-    let sqrt_price_lower = tick_math::get_sqrt_price_at_tick(current_tick_index as i32);
-    let sqrt_price_upper = tick_math::get_sqrt_price_at_tick(current_tick_index as i32);
+    println!("current_sqrt_price: {:?}", current_sqrt_price);
+    println!("current_tick_index: {:?}", current_tick_index);
+    println!("position_lower_tick: {:?}", position_lower_tick);
+    println!("position_upper_tick: {:?}", position_upper_tick);
+    println!(
+        "lower_sqrt_price_change_threshold_bps: {:?}",
+        lower_sqrt_price_change_threshold_bps
+    );
+    println!(
+        "upper_sqrt_price_change_threshold_bps: {:?}",
+        upper_sqrt_price_change_threshold_bps
+    );
+    println!(
+        "lower_sqrt_price_change_threshold_direction: {:?}",
+        lower_sqrt_price_change_threshold_direction
+    );
+    println!(
+        "upper_sqrt_price_change_threshold_direction: {:?}",
+        upper_sqrt_price_change_threshold_direction
+    );
+    println!("range_multiplier_bps: {:?}", range_multiplier_bps);
+    println!("tick_spacing: {:?}", tick_spacing);
+
+    let sqrt_price_lower = tick_math::get_sqrt_price_at_tick(position_lower_tick);
+    let sqrt_price_upper = tick_math::get_sqrt_price_at_tick(position_upper_tick);
     let lower_sqrt_price_change =
         sqrt_price_lower * (lower_sqrt_price_change_threshold_bps as u128) / 10000u128;
     let upper_sqrt_price_change =
@@ -139,22 +167,39 @@ pub fn get_new_tick_range(
     } else {
         sqrt_price_upper + upper_sqrt_price_change
     };
+    println!(
+        "_min_acceptable_sqrt_price: {:?}",
+        _min_acceptable_sqrt_price
+    );
+    println!(
+        "_max_acceptable_sqrt_price: {:?}",
+        _max_acceptable_sqrt_price
+    );
     if current_sqrt_price < _min_acceptable_sqrt_price
         || current_sqrt_price > _max_acceptable_sqrt_price
     {
+        let mut new_sqrt_price_lower =
+            current_sqrt_price - current_sqrt_price * (range_multiplier_bps as u128) / 10000u128;
+        let mut new_sqrt_price_upper =
+            current_sqrt_price + current_sqrt_price * (range_multiplier_bps as u128) / 10000u128;
+
+        if new_sqrt_price_lower < MIN_SQRT_PRICE_X64 {
+            new_sqrt_price_lower = MIN_SQRT_PRICE_X64;
+        }
+        if new_sqrt_price_upper > MAX_SQRT_PRICE_X64 {
+            new_sqrt_price_upper = MAX_SQRT_PRICE_X64;
+        }
+
+        let new_tick_lower_index = tick_math::round_tick_to_spacing(
+            tick_math::bound_tick(tick_math::get_tick_at_sqrt_price(new_sqrt_price_lower)),
+            tick_spacing,
+        );
+        let new_tick_upper_index = tick_math::round_tick_to_spacing(
+            tick_math::bound_tick(tick_math::get_tick_at_sqrt_price(new_sqrt_price_upper)),
+            tick_spacing,
+        );
+        Ok((new_tick_lower_index, new_tick_upper_index))
+    } else {
         return Err(anyhow::anyhow!("Invalid sqrt price"));
     }
-    let new_sqrt_price_lower =
-        current_sqrt_price - current_sqrt_price * (range_multiplier_bps as u128) / 10000u128;
-    let new_sqrt_price_upper =
-        current_sqrt_price + current_sqrt_price * (range_multiplier_bps as u128) / 10000u128;
-    let new_tick_lower_index = tick_math::round_tick_to_spacing(
-        tick_math::bound_tick(tick_math::get_tick_at_sqrt_price(new_sqrt_price_lower)),
-        tick_spacing,
-    );
-    let new_tick_upper_index = tick_math::round_tick_to_spacing(
-        tick_math::bound_tick(tick_math::get_tick_at_sqrt_price(new_sqrt_price_upper)),
-        tick_spacing,
-    );
-    Ok((new_tick_lower_index, new_tick_upper_index))
 }

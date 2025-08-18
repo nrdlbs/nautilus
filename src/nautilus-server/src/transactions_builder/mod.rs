@@ -10,9 +10,9 @@ pub mod helper;
 pub mod argument;
 
 const KURAGE_PACKAGE_ID: &str = "0x346acd3d4e93b389463c19cb17f698c0a5704abc3a26c9e888f796e240b47250";
+const KURAGE_NEWEST_PACKAGE_ID: &str = "0xe83d565c47afa54903c167c2624cac4390800d5e2e01a54d8b509ebeb8f762cf";
 const INTEGER_MATE_PACKAGE_ID: &str = "0x714a63a0dba6da4f017b42d5d0fb78867f18bcde904868e51d951a5a6f5b7f57";
 const REGISTRY_OBJECT_ID: &str = "0x3e0c5d8cf276070066cd61aeda14731d20079800d7c84c855fa5dc60ae4374e4";
-const ENCLAVE_OBJECT_ID: &str = "0xd77e847d6cf52f399929d30f2e916088a1680b4232634c7c4013323676768d45";
 const CLOCK_OBJECT_ID: &str = "0x0000000000000000000000000000000000000000000000000000000000000006";
 
 // array of position types
@@ -43,6 +43,7 @@ impl<'a> DexTransactionBuilder<'a> {
         new_tick_upper_index: u32,
         position_registry_id: u64,
         dex: SupportedDex,
+        enclave_id: String,
         signature: Vec<u8>,
         timestamp_ms: u64,
     ) -> TransactionBuilder {
@@ -50,19 +51,36 @@ impl<'a> DexTransactionBuilder<'a> {
         
         let registry_arg = argument::shared_mut(self.client, &mut self.tx, Address::from_hex(REGISTRY_OBJECT_ID).unwrap()).await.unwrap();
         let strategy_arg = argument::shared_mut(self.client, &mut self.tx, Address::from_hex(&request.strategy_id).unwrap()).await.unwrap();
-        let enclave_arg = argument::shared_mut(self.client, &mut self.tx, Address::from_hex(ENCLAVE_OBJECT_ID).unwrap()).await.unwrap();
+        let enclave_arg = argument::shared_mut(self.client, &mut self.tx, Address::from_hex(&enclave_id).unwrap()).await.unwrap();
         let timestamp_arg = argument::pure(&mut self.tx, timestamp_ms).unwrap();
         let signature_arg = argument::pure(&mut self.tx, signature).unwrap();
-        let clock_arg = argument::shared_mut(self.client, &mut self.tx, Address::from_hex(CLOCK_OBJECT_ID).unwrap()).await.unwrap();
+        let clock_arg = argument::shared_ref(self.client, &mut self.tx, Address::from_hex(CLOCK_OBJECT_ID).unwrap()).await.unwrap();
+
+        let strategy_id_arg = argument::pure(&mut self.tx, Address::from_hex(&request.strategy_id).unwrap()).unwrap();
+        let current_tick_arg = argument::pure(&mut self.tx, request.current_tick_u32).unwrap();
+        let current_sqrt_price_arg = argument::pure(&mut self.tx, request.current_sqrt_price).unwrap();
+        let tick_spacing_arg = argument::pure(&mut self.tx, request.tick_spacing).unwrap();
+        let tick_lower_index_arg = argument::pure(&mut self.tx, request.tick_lower_index_u32).unwrap();
+        let tick_upper_index_arg = argument::pure(&mut self.tx, request.tick_upper_index_u32).unwrap();
+
+        let construct_req = self.tx.move_call(
+            Function::new(
+                Address::from_hex(KURAGE_NEWEST_PACKAGE_ID).unwrap(),
+                Identifier::new("auto_rebalance").unwrap(),
+                Identifier::new("new_auto_rebalance_request").unwrap(),
+                vec![],
+            ),
+            vec![strategy_id_arg, current_tick_arg, current_sqrt_price_arg, tick_spacing_arg, tick_lower_index_arg, tick_upper_index_arg],
+        );
 
         let prepare_rebalance_data = self.tx.move_call(
             Function::new(
-                Address::from_hex(KURAGE_PACKAGE_ID).unwrap(),
+                Address::from_hex(KURAGE_NEWEST_PACKAGE_ID).unwrap(),
                 Identifier::new("auto_rebalance").unwrap(),
                 Identifier::new("prepare_rebalance_bot").unwrap(),
                 vec![TypeTag::Struct(Box::new(StructTag::from_str(pos_type).unwrap()))],
             ),
-            vec![registry_arg, strategy_arg, enclave_arg, timestamp_arg, signature_arg, clock_arg],
+            vec![registry_arg, strategy_arg, enclave_arg, timestamp_arg, construct_req, signature_arg, clock_arg],
         );
 
         let mut pos = prepare_rebalance_data.nested(0).unwrap();
@@ -101,7 +119,7 @@ impl<'a> DexTransactionBuilder<'a> {
 
         self.tx.move_call(
             Function::new(
-                Address::from_hex(KURAGE_PACKAGE_ID).unwrap(),
+                Address::from_hex(KURAGE_NEWEST_PACKAGE_ID).unwrap(),
                 Identifier::new("registry").unwrap(),
                 Identifier::new("return_position").unwrap(),
                 vec![TypeTag::Struct(Box::new(StructTag::from_str(pos_type).unwrap()))],
@@ -115,7 +133,7 @@ impl<'a> DexTransactionBuilder<'a> {
 
         self.tx.move_call(
             Function::new(
-                Address::from_hex(KURAGE_PACKAGE_ID).unwrap(),
+                Address::from_hex(KURAGE_NEWEST_PACKAGE_ID).unwrap(),
                 Identifier::new("auto_rebalance").unwrap(),
                 Identifier::new("repay_receipt").unwrap(),
                 vec![TypeTag::Struct(Box::new(StructTag::from_str(pos_type).unwrap()))],

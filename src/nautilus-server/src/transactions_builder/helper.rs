@@ -9,6 +9,7 @@ use sui_graphql_client::{
     Client, Direction, DynamicFieldOutput, PaginationFilter,
 };
 use sui_sdk_types::{framework::Coin, Object};
+use base64ct::Encoding;
 
 #[derive(Error, Debug)]
 pub enum SuiUtilsError {
@@ -95,13 +96,29 @@ pub async fn execute_and_wait_for_effects(
     let sig = pk
         .sign_transaction(&tx)
         .map_err(|e| SuiUtilsError::TransactionSigningError(e.to_string()))?;
+    
+    let _tx_bytes = base64ct::Base64::encode_string(&bcs::to_bytes(&tx).map_err(|e| SuiUtilsError::TransactionBuildingError(e.to_string()))?);
+
+    println!("tx: {:?}", tx);
+    println!("dry run: {:?}", dry_run);
+    println!("tx bytes: {:?}", _tx_bytes);
+    println!("sig: {:?}", sig.to_base64());
 
     if dry_run {
-        let result = client.dry_run_tx(&tx, skip_checks).await?;
-        if let Some(effects) = result.effects {
-            return Ok(effects);
-        } else {
-            return Err(SuiUtilsError::TransactionExecutionError("Dry run failed".to_string()));
+        println!("dry running");
+        match client.dry_run_tx(&tx, skip_checks).await {
+            Ok(result) => {
+                println!("dry run result: {:?}", result);
+                if let Some(effects) = result.effects {
+                    return Ok(effects);
+                } else {
+                    return Err(SuiUtilsError::TransactionExecutionError("Dry run failed - no effects".to_string()));
+                }
+            }
+            Err(e) => {
+                println!("dry run error: {:?}", e);
+                return Err(SuiUtilsError::TransactionExecutionError(format!("Dry run failed: {:?}", e)));
+            }
         }
     }
 

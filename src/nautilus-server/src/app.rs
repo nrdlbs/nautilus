@@ -11,6 +11,7 @@ use crate::common::{
 };
 use crate::parsers;
 use crate::transactions_builder::helper;
+use crate::transactions_builder::helper::new_with_gas;
 use crate::transactions_builder::DexTransactionBuilder;
 use crate::AppState;
 use crate::EnclaveError;
@@ -42,6 +43,7 @@ use sui_sdk_types::{Ed25519PublicKey, MultisigMemberPublicKey};
 pub struct TransactionRequest {
     pub pool_id: String,
     pub strategy_id: String,
+    pub enclave_id: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -59,6 +61,8 @@ pub async fn process_data_v2(
         .map_err(|e| EnclaveError::GenericError(format!("Failed to create client: {}", e)))?;
     let mut ledger_client = client.ledger_client();
     let mut graphql_client = GraphQLClient::new_mainnet();
+
+    println!("request: {:?}", request);
 
     let pool_data = ledger_client
         .get_object(GetObjectRequest {
@@ -112,6 +116,8 @@ pub async fn process_data_v2(
                 parsers::strategies::auto_rebalance::get_new_tick_range(
                     rebalance_req.current_sqrt_price,
                     rebalance_req.current_tick_u32,
+                    rebalance_req.tick_lower_index_u32 as i32,
+                    rebalance_req.tick_upper_index_u32 as i32,
                     strategy.lower_sqrt_price_change_threshold_bps,
                     strategy.upper_sqrt_price_change_threshold_bps,
                     strategy.lower_sqrt_price_change_threshold_direction,
@@ -140,6 +146,7 @@ pub async fn process_data_v2(
                     tick_upper_index,
                     processed_pool_data.position_registry_id,
                     processed_pool_data.dex,
+                    request.payload.enclave_id,
                     signed_data.signature.clone().into_bytes(),
                     current_timestamp,
                 )
@@ -155,8 +162,8 @@ pub async fn process_data_v2(
                 .await
         }
     };
-
-    match helper::execute_and_wait_for_effects(&graphql_client, tx, &kp, true, None).await {
+    
+    match helper::execute_and_wait_for_effects(&graphql_client, tx, &kp, false, None).await {
         Ok(effects) => {
             let transaction_digest = match effects {
                 TransactionEffects::V1(effects) => effects.transaction_digest,
@@ -189,6 +196,7 @@ mod test {
             payload: TransactionRequest {
                 pool_id: "0x1".to_string(),
                 strategy_id: "0x2".to_string(),
+                enclave_id: "0x3".to_string(),
             },
         };
         process_data_v2(State(Arc::new(state)), Json(request))
