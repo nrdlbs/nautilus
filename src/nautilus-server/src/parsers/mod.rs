@@ -26,11 +26,26 @@ pub use types::{SupportedDex, *};
 
 const BAG_OBJECT_ID: &str = "0x47f27839b9cbb864bf9a93223eb7c97aee04788fc2603edf56200909aa672ca8";
 
+/// Helper function để format coin type string với prefix 0x nếu cần thiết
+fn format_coin_type(coin_type: &str) -> String {
+    if coin_type.starts_with("0x") {
+        coin_type.to_string()
+    } else {
+        // Tìm vị trí của dấu :: đầu tiên
+        if let Some(pos) = coin_type.find("::") {
+            let (address_part, rest) = coin_type.split_at(pos);
+            format!("0x{}{}", address_part, rest)
+        } else {
+            coin_type.to_string()
+        }
+    }
+}
+
 pub async fn into_processed_pool_data<'a>(
     graphql_client: &'a mut GraphQLClient,
     pool_object: Object,
     strategy_object: Object,
-) -> Result<(ProcessedPoolData), anyhow::Error> {
+) -> Result<ProcessedPoolData, anyhow::Error> {
     let pool_json = pool_object.json.unwrap();
     let strategy_json = strategy_object.json.unwrap();
 
@@ -69,12 +84,16 @@ pub async fn into_processed_pool_data<'a>(
         };
 
     let (tick_lower, tick_upper, coin_a_type, coin_b_type) = match position_data {
-        Position::Cetus(cetus_position) => (
-            cetus_position.tick_lower_index.bits.parse::<u32>()?,
-            cetus_position.tick_upper_index.bits.parse::<u32>()?,
-            TypeTag::Struct(Box::new(StructTag::from_str(&cetus_position.coin_type_a.name).unwrap())),
-            TypeTag::Struct(Box::new(StructTag::from_str(&cetus_position.coin_type_b.name).unwrap())),
-        ),
+        Position::Cetus(cetus_position) => {
+            let formatted_coin_a = format_coin_type(&cetus_position.coin_type_a.name);
+            let formatted_coin_b = format_coin_type(&cetus_position.coin_type_b.name);
+            (
+                cetus_position.tick_lower_index.bits.parse::<u32>()?,
+                cetus_position.tick_upper_index.bits.parse::<u32>()?,
+                TypeTag::Struct(Box::new(StructTag::from_str(&formatted_coin_a)?)),
+                TypeTag::Struct(Box::new(StructTag::from_str(&formatted_coin_b)?)),
+            )
+        },
     };
 
     // Create request based on strategy type and pool type

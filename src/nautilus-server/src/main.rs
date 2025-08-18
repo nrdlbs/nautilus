@@ -32,16 +32,21 @@ async fn main() -> Result<()> {
         .route("/get_attestation", get(get_attestation))
         .route("/process_data_v2", post(process_data_v2))
         .route("/health_check", get(health_check))
+        .route("/health_check_post", post(health_check_post))
         .with_state(state)
         .layer(cors);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await?;
-    info!("listening on {}", listener.local_addr().unwrap());
+    println!("listening on {}", listener.local_addr().unwrap());
     axum::serve(listener, app.into_make_service())
         .await
         .map_err(|e| anyhow::anyhow!("Server error: {}", e))
 }
 
 async fn ping() -> &'static str {
-    "Pong!"
+    "Ping Pong!"
+}
+
+async fn health_check_post() -> &'static str {
+    "Health check post!"
 }

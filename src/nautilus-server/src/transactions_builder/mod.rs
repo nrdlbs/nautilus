@@ -58,7 +58,7 @@ impl<'a> DexTransactionBuilder<'a> {
         let timestamp_arg = argument::pure(&mut self.tx, timestamp_ms).unwrap();
         let signature_arg = argument::pure(&mut self.tx, signature).unwrap();
         let clock_arg = argument::shared_ref(self.client, &mut self.tx, Address::from_hex(CLOCK_OBJECT_ID).unwrap()).await.unwrap();
-
+        let pool_arg = argument::shared_mut(self.client, &mut self.tx, Address::from_hex(&pool_id).unwrap()).await.unwrap();
         let strategy_id_arg = argument::pure(&mut self.tx, Address::from_hex(&request.strategy_id).unwrap()).unwrap();
         let current_tick_arg = argument::pure(&mut self.tx, request.current_tick_u32).unwrap();
         let current_sqrt_price_arg = argument::pure(&mut self.tx, request.current_sqrt_price).unwrap();
@@ -89,16 +89,13 @@ impl<'a> DexTransactionBuilder<'a> {
         let pos = prepare_rebalance_data.nested(0).unwrap();
         let receipt = prepare_rebalance_data.nested(1).unwrap();
 
-        let (tx, position) = match dex {
+        let position = match dex {
             SupportedDex::Cetus => {
-                cetus::CetusTransactionBuilder::new(self.client)
-                    .rebalance(self.tx, cetus::RebalanceData::new(pos, pool_id.clone(), coin_a_type.clone(), coin_b_type.clone(), request.tick_lower_index_u32, request.tick_upper_index_u32))
-                    .await
+                let mut cetus_tx = cetus::CetusTransactionBuilder::new(self.client, &mut self.tx).await;
+                cetus_tx.rebalance(cetus::RebalanceData::new(pos, pool_arg, coin_a_type.clone(), coin_b_type.clone(), request.tick_lower_index_u32, request.tick_upper_index_u32, clock_arg)).await
             }
             _ => panic!("Unsupported dex"),
         };
-
-        self.tx = tx;
 
         let tick_lower_index_arg = argument::pure(&mut self.tx, new_tick_lower_index).unwrap();
         let tick_upper_index_arg = argument::pure(&mut self.tx, new_tick_upper_index).unwrap();
@@ -156,18 +153,18 @@ impl<'a> DexTransactionBuilder<'a> {
     }
 
     pub async fn compound(
-        self,
+        mut self,
         request: CompoundRequest,
         dex: SupportedDex,
         signature: Vec<u8>,
     ) -> TransactionBuilder {
         match dex {
             SupportedDex::Cetus => {
-                cetus::CetusTransactionBuilder::new(self.client)
-                    .compound(request, signature, self.tx)
-                    .await
+                let mut cetus_tx = cetus::CetusTransactionBuilder::new(self.client, &mut self.tx).await;
+                cetus_tx.compound(request, signature).await;
             }
             _ => panic!("Unsupported dex"),
         }
+        self.tx
     }
 }

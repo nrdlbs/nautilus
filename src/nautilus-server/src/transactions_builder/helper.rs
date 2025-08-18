@@ -100,9 +100,6 @@ pub async fn execute_and_wait_for_effects(
     let _tx_bytes = base64ct::Base64::encode_string(&bcs::to_bytes(&tx).map_err(|e| SuiUtilsError::TransactionBuildingError(e.to_string()))?);
 
     println!("tx: {:?}", tx);
-    println!("dry run: {:?}", dry_run);
-    println!("tx bytes: {:?}", _tx_bytes);
-    println!("sig: {:?}", sig.to_base64());
 
     if dry_run {
         println!("dry running");

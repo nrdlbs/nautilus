@@ -73,7 +73,7 @@ pub async fn process_data_v2(
             }),
         })
         .await
-        .map_err(|e| EnclaveError::GenericError(format!("Failed to get object: {}", e)))?;
+        .map_err(|e| EnclaveError::GenericError(format!("Failed to get object 1: {}", e)))?;
     let pool_object = pool_data.into_inner().object.unwrap();
 
     let strategy_data = ledger_client
@@ -85,7 +85,7 @@ pub async fn process_data_v2(
             }),
         })
         .await
-        .map_err(|e| EnclaveError::GenericError(format!("Failed to get object: {}", e)))?;
+        .map_err(|e| EnclaveError::GenericError(format!("Failed to get object 2: {}", e)))?;
     let strategy_object = strategy_data.into_inner().object.unwrap();
 
     let processed_pool_data =
@@ -111,7 +111,10 @@ pub async fn process_data_v2(
 
     let tx = match &processed_pool_data.request {
         parsers::Request::Rebalance(rebalance_req) => {
-            let strategy = processed_pool_data.auto_rebalance_strategy.as_ref().unwrap();
+            let strategy = processed_pool_data
+                .auto_rebalance_strategy
+                .as_ref()
+                .unwrap();
             let (tick_lower_index_i32, tick_upper_index_i32) =
                 parsers::strategies::auto_rebalance::get_new_tick_range(
                     rebalance_req.current_sqrt_price,
@@ -165,8 +168,8 @@ pub async fn process_data_v2(
                 .await
         }
     };
-    
-    match helper::execute_and_wait_for_effects(&graphql_client, tx, &kp, false, None).await {
+
+    match helper::execute_and_wait_for_effects(&graphql_client, tx, &kp, true, None).await {
         Ok(effects) => {
             let transaction_digest = match effects {
                 TransactionEffects::V1(effects) => effects.transaction_digest,
