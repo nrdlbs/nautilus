@@ -53,7 +53,7 @@ impl<'a> DexTransactionBuilder<'a> {
         let pos_type = get_position_types(dex);
         
         let registry_arg = argument::shared_mut(self.client, &mut self.tx, Address::from_hex(REGISTRY_OBJECT_ID).unwrap()).await.unwrap();
-        let strategy_arg = argument::shared_mut(self.client, &mut self.tx, Address::from_hex(&request.strategy_id).unwrap()).await.unwrap();
+        let strategy_arg = argument::shared_mut(self.client, &mut self.tx, request.strategy_id.clone()).await.unwrap();
         let enclave_arg = argument::shared_mut(self.client, &mut self.tx, Address::from_hex(&enclave_id).unwrap()).await.unwrap();
         let timestamp_arg = argument::pure(&mut self.tx, timestamp_ms).unwrap();
         let signature_arg = argument::pure(&mut self.tx, signature).unwrap();
