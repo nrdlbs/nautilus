@@ -10,10 +10,26 @@ use nautilus_server::AppState;
 use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
 use tracing::info;
+use once_cell::sync::Lazy;
+use anyhow::Context;
+use hex;
+use fastcrypto::traits::ToFromBytes;
+
+// ---------- static keypair ----------
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let eph_kp = Ed25519KeyPair::generate(&mut rand::thread_rng());
+    // let eph_kp = Ed25519KeyPair::generate(&mut rand::thread_rng());
+    // static eph_kp
+    let seed_hex = std::env::var("EPH_ED25519_SEED")
+        .context("EPH_ED25519_SEED not set (expect 32-byte hex seed)")?;
+    let seed_hex = seed_hex.trim_start_matches("0x");
+    let bytes = hex::decode(seed_hex).context("seed not valid hex")?;
+    anyhow::ensure!(bytes.len() == 32, "seed must be exactly 32 bytes");
+
+    // fastcrypto's Ed25519KeyPair can be deterministically derived from a 32-byte seed:
+    let seed: [u8; 32] = bytes.try_into().expect("length checked above");
+    let eph_kp = Ed25519KeyPair::from_bytes(&seed).unwrap();
 
     // This value can be stored with secret-manager. To do that, follow the prompt `sh configure_enclave.sh`
     // Answer `y` to `Do you want to use a secret?` and finish.
