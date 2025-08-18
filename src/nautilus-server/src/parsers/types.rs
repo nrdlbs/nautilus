@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use sui_sdk_types::TypeTag;
+use sui_sdk_types::{Address, TypeTag};
 
 // ============================================================================
 // REQUEST TYPES
@@ -7,7 +7,7 @@ use sui_sdk_types::TypeTag;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct RebalanceRequest {
-    pub strategy_id: String,
+    pub strategy_id: Address,
     pub current_tick_u32: u32,
     pub current_sqrt_price: u128,
     pub tick_spacing: u32,

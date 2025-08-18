@@ -101,13 +101,15 @@ pub async fn process_data_v2(
     let dex_tx_builder = DexTransactionBuilder::new(&graphql_client, address, 100000000).await;
 
     let signed_data = to_signed_response(
-        &state.eph_kp,
+        &state.eph_kp, 
         TransactionResponse {
             request: processed_pool_data.request.clone(),
         },
         current_timestamp,
         IntentScope::Transaction,
     );
+
+    println!("state.eph_kp: {:?}", state.eph_kp);
 
     println!("signed_data: {:?}", signed_data.signature);
 

@@ -72,6 +72,10 @@ pub fn to_signed_response<T: Serialize + Clone>(
     timestamp_ms: u64,
     intent: IntentScope,
 ) -> ProcessedDataResponse<IntentMessage<T>> {
+    println!("intent: {:?}", &intent);
+    println!("timestamp_ms: {:?}", timestamp_ms);
+    println!("payload: {}", serde_json::to_string(&payload).unwrap());
+
     let intent_msg = IntentMessage {
         intent,
         timestamp_ms,
@@ -79,6 +83,7 @@ pub fn to_signed_response<T: Serialize + Clone>(
     };
 
     let signing_payload = bcs::to_bytes(&intent_msg).expect("should not fail");
+    println!("signing_payload: {:?}", Hex::encode(signing_payload.as_slice()));
     let sig = kp.sign(&signing_payload);
     ProcessedDataResponse {
         response: intent_msg,

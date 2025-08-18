@@ -99,7 +99,7 @@ pub async fn into_processed_pool_data<'a>(
     // Create request based on strategy type and pool type
     let request = match &strategy_data {
         Strategy::AutoRebalance(_auto_rebalance) => Request::Rebalance(RebalanceRequest {
-            strategy_id: strategy_object.object_id.unwrap_or_default(),
+            strategy_id: Address::from_hex(strategy_object.object_id.unwrap_or_default()).unwrap(),
             current_tick_u32: current_tick as u32,
             current_sqrt_price: current_sqrt_price,
             tick_spacing: tick_spacing,
