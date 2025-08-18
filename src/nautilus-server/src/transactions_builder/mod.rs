@@ -59,7 +59,7 @@ impl<'a> DexTransactionBuilder<'a> {
         let signature_arg = argument::pure(&mut self.tx, signature).unwrap();
         let clock_arg = argument::shared_ref(self.client, &mut self.tx, Address::from_hex(CLOCK_OBJECT_ID).unwrap()).await.unwrap();
         let pool_arg = argument::shared_mut(self.client, &mut self.tx, Address::from_hex(&pool_id).unwrap()).await.unwrap();
-        let strategy_id_arg = argument::pure(&mut self.tx, Address::from_hex(&request.strategy_id).unwrap()).unwrap();
+        let strategy_id_arg = argument::pure(&mut self.tx, request.strategy_id.clone()).unwrap();
         let current_tick_arg = argument::pure(&mut self.tx, request.current_tick_u32).unwrap();
         let current_sqrt_price_arg = argument::pure(&mut self.tx, request.current_sqrt_price).unwrap();
         let tick_spacing_arg = argument::pure(&mut self.tx, request.tick_spacing).unwrap();
