@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.4
 # Copyright (c), Mysten Labs, Inc.
 # SPDX-License-Identifier: Apache-2.0
 
@@ -51,14 +52,52 @@ COPY --from=user-linux-nitro /bzImage .
 COPY --from=user-linux-nitro /nsm.ko .
 COPY --from=user-linux-nitro /linux.config .
 
-FROM base as build
-COPY . .
+# Dependency caching stage - copy manifest files first
+FROM base as dependencies
+COPY Cargo.toml Cargo.lock ./
+COPY src/aws/Cargo.toml src/aws/
+COPY src/get_attestation_cli/Cargo.toml src/get_attestation_cli/
+COPY src/init/Cargo.toml src/init/Cargo.lock src/init/
+COPY src/nautilus-server/Cargo.toml src/nautilus-server/Cargo.lock src/nautilus-server/
+COPY src/system/Cargo.toml src/system/
 
-RUN cargo build --workspace --locked --no-default-features --release --target x86_64-unknown-linux-musl
+# Create minimal source files to satisfy cargo build for dependency caching
+# Match the actual project structure: init/init.rs, aws/src/lib.rs, system/src/lib.rs, etc.
+RUN mkdir -p src/aws/src src/get_attestation_cli/src src/init src/nautilus-server/src src/system/src && \
+    echo "pub fn dummy() {}" > src/aws/src/lib.rs && \
+    echo "fn main() {}" > src/get_attestation_cli/src/main.rs && \
+    echo "fn main() {}" > src/init/init.rs && \
+    echo "fn main() {}" > src/nautilus-server/src/main.rs && \
+    echo "pub fn dummy() {}" > src/system/src/lib.rs && \
+    find . -name "*.rs" -exec touch {} \;
 
+# Build dependencies only - this layer will be cached unless Cargo.toml/Cargo.lock changes
+# Use BuildKit cache mounts and preserve target directory for incremental builds
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/target \
+    cargo build --workspace --locked --no-default-features --release --target x86_64-unknown-linux-musl || true
+
+# Build application - copy real source and build incrementally
+FROM dependencies as build
+
+# Copy source files strategically to maximize cache hits
+COPY src/ src/
+
+# Build workspace with incremental compilation using cache mounts
+# The target cache mount allows Cargo to reuse compiled dependencies
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/target \
+    cargo build --workspace --locked --no-default-features --release --target x86_64-unknown-linux-musl && \
+    mkdir -p /build_output && \
+    cp /target/x86_64-unknown-linux-musl/release/init /build_output/
+
+# Build nautilus-server with specific flags
 WORKDIR /src/nautilus-server
 ENV RUSTFLAGS="-C target-feature=+crt-static -C relocation-model=static"
-RUN cargo build --locked --no-default-features --release --target x86_64-unknown-linux-musl
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/src/nautilus-server/target \
+    cargo build --locked --no-default-features --release --target x86_64-unknown-linux-musl && \
+    cp /src/nautilus-server/target/x86_64-unknown-linux-musl/release/nautilus-server /build_output/
 
 WORKDIR /build_cpio
 ENV KBUILD_BUILD_TIMESTAMP=1
@@ -70,9 +109,9 @@ COPY --from=core-musl . initramfs
 COPY --from=core-ca-certificates /etc/ssl/certs initramfs
 COPY --from=core-busybox /bin/sh initramfs/sh
 COPY --from=user-jq /bin/jq initramfs
-COPY --from=user-socat /bin/socat . initramfs
-RUN cp /target/${TARGET}/release/init initramfs
-RUN cp /src/nautilus-server/target/${TARGET}/release/nautilus-server initramfs
+COPY --from=user-socat /bin/socat initramfs/
+RUN cp /build_output/init initramfs
+RUN cp /build_output/nautilus-server initramfs
 RUN cp /src/nautilus-server/traffic_forwarder.py initramfs/
 RUN cp /src/nautilus-server/run.sh initramfs/
 RUN cp /src/nautilus-server/allowed_endpoints.yaml initramfs/
