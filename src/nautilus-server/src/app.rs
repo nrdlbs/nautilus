@@ -1,118 +1,234 @@
 // Copyright (c), Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+#![feature(core_intrinsics)]
+
+use crate::common::parse_sui_privkey;
 use crate::common::IntentMessage;
-use crate::common::{to_signed_response, IntentScope, ProcessDataRequest, ProcessedDataResponse};
+use crate::common::{
+    construct_kp_from_bech32_string, to_signed_response, IntentScope, ProcessDataRequest,
+    ProcessedDataResponse,
+};
+use crate::parsers;
+use crate::transactions_builder::helper;
+use crate::transactions_builder::helper::new_with_gas;
+use crate::transactions_builder::DexTransactionBuilder;
 use crate::AppState;
 use crate::EnclaveError;
+use anyhow::anyhow;
 use axum::extract::State;
 use axum::Json;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use std::sync::Arc;
+use sui_crypto::simple::SimpleKeypair;
+use sui_crypto::Signer;
+use sui_crypto::SuiSigner;
+use sui_graphql_client::Client as GraphQLClient;
+use sui_graphql_client::PaginationFilter;
+use sui_rpc::field::FieldMask;
+use sui_rpc::proto::sui::rpc::v2beta2::GetBalanceRequest;
+use sui_rpc::proto::sui::rpc::v2beta2::GetObjectRequest;
+use sui_rpc::Client;
+use sui_sdk_types::Input;
+use sui_sdk_types::Object;
+use sui_sdk_types::TransactionEffects;
+use sui_sdk_types::{Ed25519PublicKey, MultisigMemberPublicKey};
+
 /// ====
 /// Core Nautilus server logic, replace it with your own
 /// relavant structs and process_data endpoint.
 /// ====
-
-/// Inner type T for IntentMessage<T>
+///
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct WeatherResponse {
-    pub location: String,
-    pub temperature: u64,
+pub struct TransactionRequest {
+    pub pool_id: String,
+    pub strategy_id: String,
+    pub enclave_id: String,
 }
 
-/// Inner type T for ProcessDataRequest<T>
-#[derive(Debug, Serialize, Deserialize)]
-pub struct WeatherRequest {
-    pub location: String,
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct TransactionResponse<T> {
+    pub request: T,
 }
 
-pub async fn process_data(
+pub async fn process_data_v2(
     State(state): State<Arc<AppState>>,
-    Json(request): Json<ProcessDataRequest<WeatherRequest>>,
-) -> Result<Json<ProcessedDataResponse<IntentMessage<WeatherResponse>>>, EnclaveError> {
-    let url = format!(
-        "https://api.weatherapi.com/v1/current.json?key={}&q={}",
-        state.api_key, request.payload.location
-    );
-    let response = reqwest::get(url.clone()).await.map_err(|e| {
-        EnclaveError::GenericError(format!("Failed to get weather response: {}", e))
-    })?;
-    let json = response.json::<Value>().await.map_err(|e| {
-        EnclaveError::GenericError(format!("Failed to parse weather response: {}", e))
-    })?;
-    let location = json["location"]["name"].as_str().unwrap_or("Unknown");
-    let temperature = json["current"]["temp_c"].as_f64().unwrap_or(0.0) as u64;
-    let last_updated_epoch = json["current"]["last_updated_epoch"].as_u64().unwrap_or(0);
-    let last_updated_timestamp_ms = last_updated_epoch * 1000_u64;
-    let current_timestamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_err(|e| EnclaveError::GenericError(format!("Failed to get current timestamp: {}", e)))?
-        .as_millis() as u64;
+    Json(request): Json<ProcessDataRequest<TransactionRequest>>,
+) -> Result<(), EnclaveError> {
+    let kp = construct_kp_from_bech32_string(&state.pk_string)
+        .map_err(|e| EnclaveError::GenericError(format!("Failed to construct keypair: {}", e)))?;
+    let mut client = Client::new("https://fullnode.mainnet.sui.io:443")
+        .map_err(|e| EnclaveError::GenericError(format!("Failed to create client: {}", e)))?;
+    let mut ledger_client = client.ledger_client();
+    let mut graphql_client = GraphQLClient::new_mainnet();
 
-    // 1 hour in milliseconds = 60 * 60 * 1000 = 3_600_000
-    if last_updated_timestamp_ms + 3_600_000 < current_timestamp {
-        return Err(EnclaveError::GenericError(
-            "Weather API timestamp is too old".to_string(),
-        ));
+    for _ in 0..10 {
+        let pool_data = ledger_client
+            .get_object(GetObjectRequest {
+                object_id: Some(request.payload.pool_id.clone()),
+                version: None,
+                read_mask: Some(FieldMask {
+                    paths: vec!["*".into()],
+                }),
+            })
+            .await
+            .map_err(|e| EnclaveError::GenericError(format!("Failed to get pool: {}", e)))?;
+        let pool_object = pool_data.into_inner().object.unwrap();
+
+        let strategy_data = ledger_client
+            .get_object(GetObjectRequest {
+                object_id: Some(request.payload.strategy_id.clone()),
+                version: None,
+                read_mask: Some(FieldMask {
+                    paths: vec!["*".into()],
+                }),
+            })
+            .await
+            .map_err(|e| EnclaveError::GenericError(format!("Failed to get strategy: {}", e)))?;
+        let strategy_object = strategy_data.into_inner().object.unwrap();
+
+        let processed_pool_data =
+            parsers::into_processed_pool_data(&mut graphql_client, pool_object, strategy_object)
+                .await
+                .map_err(|e| {
+                    EnclaveError::GenericError(format!("Failed to handle object: {}", e))
+                })?;
+
+        let current_timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|e| {
+                EnclaveError::GenericError(format!("Failed to get current timestamp: {}", e))
+            })?
+            .as_millis() as u64;
+
+        let address = kp.public_key().derive_address();
+
+        let dex_tx_builder = DexTransactionBuilder::new(&graphql_client, address, 100000000).await;
+        let tx: sui_transaction_builder::TransactionBuilder = match &processed_pool_data.request {
+            parsers::Request::Rebalance(rebalance_req) => {
+                let strategy = processed_pool_data
+                    .auto_rebalance_strategy
+                    .as_ref()
+                    .unwrap();
+                let signed_data = Json(to_signed_response(
+                    &state.eph_kp,
+                    TransactionResponse {
+                        request: rebalance_req.clone(),
+                    },
+                    current_timestamp,
+                    IntentScope::Transaction,
+                ));
+                let (tick_lower_index_i32, tick_upper_index_i32) =
+                    parsers::strategies::auto_rebalance::get_new_tick_range(
+                        rebalance_req.current_sqrt_price,
+                        rebalance_req.current_tick_u32,
+                        rebalance_req.tick_lower_index_u32 as i32,
+                        rebalance_req.tick_upper_index_u32 as i32,
+                        strategy.lower_sqrt_price_change_threshold_bps,
+                        strategy.upper_sqrt_price_change_threshold_bps,
+                        strategy.lower_sqrt_price_change_threshold_direction,
+                        strategy.upper_sqrt_price_change_threshold_direction,
+                        strategy.range_multiplier_lower,
+                        strategy.range_multiplier_upper,
+                        rebalance_req.tick_spacing,
+                    )
+                    .map_err(|e| {
+                        EnclaveError::GenericError(format!("Failed to get new tick range: {}", e))
+                    })?;
+                // convert to u32, if negative, add 2^32
+                let tick_lower_index = if tick_lower_index_i32 < 0 {
+                    (tick_lower_index_i32 + 2i32.pow(32)) as u32
+                } else {
+                    tick_lower_index_i32 as u32
+                };
+                let tick_upper_index = if tick_upper_index_i32 < 0 {
+                    (tick_upper_index_i32 + 2i32.pow(32)) as u32
+                } else {
+                    tick_upper_index_i32 as u32
+                };
+                let lp_slippage_tolerance_bps = strategy.lp_slippage_tolerance_bps;
+                dex_tx_builder
+                    .rebalance(
+                        rebalance_req.clone(),
+                        request.payload.pool_id.clone(),
+                        processed_pool_data.coin_a_type.clone(),
+                        processed_pool_data.coin_b_type.clone(),
+                        tick_lower_index,
+                        tick_upper_index,
+                        processed_pool_data.position_liquidity,
+                        processed_pool_data.position_registry_id,
+                        processed_pool_data.dex,
+                        request.payload.enclave_id.clone(),
+                        signed_data.signature.clone(),
+                        current_timestamp,
+                        lp_slippage_tolerance_bps,
+                        processed_pool_data.balances_bag.clone(),
+                        processed_pool_data.rewarder_coin_types.clone(),
+                    )
+                    .await
+            }
+            parsers::Request::Compound(compound_req) => {
+                let signed_data = to_signed_response(
+                    &state.eph_kp,
+                    TransactionResponse {
+                        request: compound_req.clone(),
+                    },
+                    current_timestamp,
+                    IntentScope::Transaction,
+                );
+                println!("state.eph_kp: {:?}", state.eph_kp);
+
+                println!("signed_data: {:?}", signed_data.signature);
+                dex_tx_builder
+                    .compound(
+                        compound_req.clone(),
+                        processed_pool_data.dex,
+                        signed_data.signature.clone(),
+                    )
+                    .await
+            }
+        };
+
+        match helper::execute_and_wait_for_effects(&graphql_client, tx, &kp, false, None).await {
+            Ok(effects) => {
+                let transaction_digest = match effects {
+                    TransactionEffects::V1(effects) => effects.transaction_digest,
+                    TransactionEffects::V2(effects) => effects.transaction_digest,
+                };
+                println!("transaction_digest: {:?}", transaction_digest);
+                break;
+            }
+            Err(e) => {
+                println!("Error executing transaction: {:?}", e);
+            }
+        }
     }
 
-    Ok(Json(to_signed_response(
-        &state.eph_kp,
-        WeatherResponse {
-            location: location.to_string(),
-            temperature,
-        },
-        last_updated_timestamp_ms,
-        IntentScope::Weather,
-    )))
+    Ok(())
 }
 
-#[cfg(test)]
 mod test {
     use super::*;
-    use crate::common::IntentMessage;
-    use axum::{extract::State, Json};
-    use fastcrypto::{ed25519::Ed25519KeyPair, traits::KeyPair};
+    use fastcrypto::ed25519::Ed25519KeyPair;
+    use fastcrypto::traits::KeyPair;
+    use rand::rngs::OsRng;
 
     #[tokio::test]
-    async fn test_process_data() {
-        let state = Arc::new(AppState {
-            eph_kp: Ed25519KeyPair::generate(&mut rand::thread_rng()),
-            api_key: "045a27812dbe456392913223221306".to_string(),
-        });
-        let signed_weather_response = process_data(
-            State(state),
-            Json(ProcessDataRequest {
-                payload: WeatherRequest {
-                    location: "San Francisco".to_string(),
-                },
-            }),
-        )
-        .await
-        .unwrap();
-        assert_eq!(
-            signed_weather_response.response.data.location,
-            "San Francisco"
-        );
-    }
-
-    #[test]
-    fn test_serde() {
-        // test result should be consistent with test_serde in `move/enclave/sources/enclave.move`.
-        use fastcrypto::encoding::{Encoding, Hex};
-        let payload = WeatherResponse {
-            location: "San Francisco".to_string(),
-            temperature: 13,
+    async fn test_process_data_v2() {
+        let eph_kp = Ed25519KeyPair::generate(&mut rand::thread_rng());
+        let state = AppState {
+            eph_kp: eph_kp,
+            pk_string: "".to_string(),
         };
-        let timestamp = 1744038900000;
-        let intent_msg = IntentMessage::new(payload, timestamp, IntentScope::Weather);
-        let signing_payload = bcs::to_bytes(&intent_msg).expect("should not fail");
-        assert!(
-            signing_payload
-                == Hex::decode("0020b1d110960100000d53616e204672616e636973636f0d00000000000000")
-                    .unwrap()
-        );
+        let request = ProcessDataRequest::<TransactionRequest> {
+            payload: TransactionRequest {
+                pool_id: "0x1".to_string(),
+                strategy_id: "0x2".to_string(),
+                enclave_id: "0x3".to_string(),
+            },
+        };
+        process_data_v2(State(Arc::new(state)), Json(request))
+            .await
+            .unwrap();
     }
 }

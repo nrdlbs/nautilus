@@ -19,7 +19,9 @@ use std::fmt::Debug;
 use std::sync::Arc;
 use std::time::Duration;
 use tracing::info;
-
+use anyhow::{Context, Result};
+use bech32::{Hrp, decode};
+use sui_crypto::ed25519::Ed25519PrivateKey;
 use fastcrypto::ed25519::Ed25519KeyPair;
 /// ==== COMMON TYPES ====
 
@@ -37,7 +39,7 @@ pub struct IntentMessage<T: Serialize> {
 #[derive(Serialize_repr, Deserialize_repr, Debug)]
 #[repr(u8)]
 pub enum IntentScope {
-    Weather = 0,
+    Transaction = 0,
 }
 
 impl<T: Serialize + Debug> IntentMessage<T> {
@@ -54,7 +56,7 @@ impl<T: Serialize + Debug> IntentMessage<T> {
 #[derive(Serialize, Deserialize)]
 pub struct ProcessedDataResponse<T> {
     pub response: T,
-    pub signature: String,
+    pub signature: Vec<u8>,
 }
 
 /// Wrapper struct containing the request payload.
@@ -70,6 +72,10 @@ pub fn to_signed_response<T: Serialize + Clone>(
     timestamp_ms: u64,
     intent: IntentScope,
 ) -> ProcessedDataResponse<IntentMessage<T>> {
+    println!("intent: {:?}", &intent);
+    println!("timestamp_ms: {:?}", timestamp_ms);
+    println!("payload: {}", serde_json::to_string(&payload).unwrap());
+
     let intent_msg = IntentMessage {
         intent,
         timestamp_ms,
@@ -77,10 +83,11 @@ pub fn to_signed_response<T: Serialize + Clone>(
     };
 
     let signing_payload = bcs::to_bytes(&intent_msg).expect("should not fail");
+    println!("signing_payload: {:?}", Hex::encode(signing_payload.as_slice()));
     let sig = kp.sign(&signing_payload);
     ProcessedDataResponse {
         response: intent_msg,
-        signature: Hex::encode(sig),
+        signature: sig.as_ref().to_vec(),
     }
 }
 
@@ -220,4 +227,48 @@ pub async fn health_check(
         pk: Hex::encode(pk.as_bytes()),
         endpoints_status,
     }))
+}
+
+fn five_to_eight_relaxed(data: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(data.len() * 5 / 8 + 1);
+    let mut acc: u32 = 0;
+    let mut bits: u32 = 0;
+
+    for &v in data {
+        acc = (acc << 5) | (v as u32);
+        bits += 5;
+        while bits >= 8 {
+            bits -= 8;
+            out.push(((acc >> bits) & 0xFF) as u8);
+        }
+    }
+    out // ignore leftover <8 bits
+}
+
+pub fn parse_sui_privkey(bech: &str) -> Result<Ed25519PrivateKey> {
+    let (hrp, payload) = decode(bech).context("bech32 decode failed")?;
+
+    // HRP must be "suiprivkey"
+    let expected = Hrp::parse_unchecked("suiprivkey");
+    anyhow::ensure!(hrp == expected, "unexpected HRP: {}", hrp);
+
+    // ADAPTIVE: 5-bit or already 8-bit?
+    let maxv = payload.iter().copied().max().unwrap_or(0);
+    let bytes = if maxv <= 31 {
+        five_to_eight_relaxed(&payload)
+    } else {
+        payload // already 8-bit
+    };
+
+    anyhow::ensure!(bytes.len() == 33, "expected 33 bytes, got {}", bytes.len());
+    anyhow::ensure!(bytes[0] == 0x00, "not an ed25519 key (scheme={:#04x})", bytes[0]);
+
+    let sk: [u8; 32] = bytes[1..].try_into().unwrap();
+    let key = Ed25519PrivateKey::new(sk);
+    Ok(key)
+}
+
+pub fn construct_kp_from_bech32_string(bech: &str) -> Result<Ed25519PrivateKey> {
+    let key = parse_sui_privkey(bech)?;
+    Ok(key)
 }
