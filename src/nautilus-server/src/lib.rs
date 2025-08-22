@@ -13,6 +13,7 @@ pub mod common;
 pub mod math;
 pub mod parsers;
 pub mod transactions_builder;
+pub mod aggregator;
 
 /// App state, at minimum needs to maintain the ephemeral keypair.  
 pub struct AppState {

@@ -11,8 +11,6 @@ pub fn map_position_data(value: &Box<Value>) -> Result<CetusPosition, anyhow::Er
 
     let fields = position_value;
 
-    println!("fields: {:?}", fields);
-
     let position_data = CetusPosition {
         id: extract_nested_id_from_json_fields(fields, "id")?,
         pool: extract_string_from_json_fields(fields, "pool")?,

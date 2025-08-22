@@ -1,3 +1,6 @@
+use bigdecimal::BigDecimal;
+use num_bigint::BigInt;
+
 // Simplified Rust port of tick math functions
 use crate::math::full_math_u128;
 use std::ops::{Shl, Shr};
@@ -222,6 +225,16 @@ pub fn round_tick_to_spacing(tick: i32, spacing: u32) -> i32 {
         tick - rem as i32
     };
     rounded_tick
+}
+
+pub fn sqrt_price_x64_to_price(sqrt_price_x64: u128, coin_a_decimals: u8, coin_b_decimals: u8) -> BigInt {
+    let price = if coin_a_decimals > coin_b_decimals {
+        BigInt::from(sqrt_price_x64) * BigInt::from(sqrt_price_x64) * BigInt::from(10u128.pow(coin_a_decimals as u32 - coin_b_decimals as u32))
+    } else {
+        BigInt::from(sqrt_price_x64) * BigInt::from(sqrt_price_x64) / BigInt::from(10u128.pow(coin_b_decimals as u32 - coin_a_decimals as u32))
+    };
+    println!("price: {}", price);
+    price / (BigInt::from(2).pow(128))
 }
 
 pub mod tests {

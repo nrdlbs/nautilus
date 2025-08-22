@@ -20,7 +20,6 @@ pub fn map_strategy_data(value: &Box<Value>) -> Result<AutoRebalanceStrategy, an
 
     let strategy_data = AutoRebalanceStrategy {
         id: extract_nested_id_from_fields(fields, "id")?,
-        version: extract_number_from_fields(fields, "version")?,
         owner: extract_string_from_fields(fields, "owner")?,
         position_registry_id: extract_number_from_fields(fields, "position_registry_id")?,
         description: extract_string_from_fields(fields, "description")?,
@@ -41,7 +40,8 @@ pub fn map_strategy_data(value: &Box<Value>) -> Result<AutoRebalanceStrategy, an
             "upper_sqrt_price_change_threshold_direction",
         )?,
         rebalance_cooldown_secs: extract_number_from_fields(fields, "rebalance_cooldown_secs")?,
-        range_multiplier: extract_number_from_fields(fields, "range_multiplier")?,
+        range_multiplier_lower: extract_number_from_fields(fields, "range_multiplier_lower")?,
+        range_multiplier_upper: extract_number_from_fields(fields, "range_multiplier_upper")?,
         rebalance_max_tick: I32Wrapper {
             bits: extract_nested_string_from_fields(fields, "rebalance_max_tick", "bits")?,
         },
@@ -125,7 +125,8 @@ pub fn get_new_tick_range(
     upper_sqrt_price_change_threshold_bps: u64,
     lower_sqrt_price_change_threshold_direction: bool,
     upper_sqrt_price_change_threshold_direction: bool,
-    range_multiplier_bps: u64,
+    range_multiplier_lower: u64,
+    range_multiplier_upper: u64,
     tick_spacing: u32,
 ) -> Result<(i32, i32), anyhow::Error> {
     println!("current_sqrt_price: {:?}", current_sqrt_price);
@@ -148,7 +149,8 @@ pub fn get_new_tick_range(
         "upper_sqrt_price_change_threshold_direction: {:?}",
         upper_sqrt_price_change_threshold_direction
     );
-    println!("range_multiplier_bps: {:?}", range_multiplier_bps);
+    println!("range_multiplier_lower: {:?}", range_multiplier_lower);
+    println!("range_multiplier_upper: {:?}", range_multiplier_upper);
     println!("tick_spacing: {:?}", tick_spacing);
 
     let sqrt_price_lower = tick_math::get_sqrt_price_at_tick(position_lower_tick);
@@ -179,9 +181,9 @@ pub fn get_new_tick_range(
         || current_sqrt_price > _max_acceptable_sqrt_price
     {
         let mut new_sqrt_price_lower =
-            current_sqrt_price - current_sqrt_price * (range_multiplier_bps as u128) / 10000u128;
+            current_sqrt_price - current_sqrt_price * (range_multiplier_lower as u128) / 10000u128;
         let mut new_sqrt_price_upper =
-            current_sqrt_price + current_sqrt_price * (range_multiplier_bps as u128) / 10000u128;
+            current_sqrt_price + current_sqrt_price * (range_multiplier_upper as u128) / 10000u128;
 
         if new_sqrt_price_lower < MIN_SQRT_PRICE_X64 {
             new_sqrt_price_lower = MIN_SQRT_PRICE_X64;

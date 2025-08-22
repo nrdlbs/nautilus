@@ -56,7 +56,7 @@ impl<T: Serialize + Debug> IntentMessage<T> {
 #[derive(Serialize, Deserialize)]
 pub struct ProcessedDataResponse<T> {
     pub response: T,
-    pub signature: String,
+    pub signature: Vec<u8>,
 }
 
 /// Wrapper struct containing the request payload.
@@ -87,7 +87,7 @@ pub fn to_signed_response<T: Serialize + Clone>(
     let sig = kp.sign(&signing_payload);
     ProcessedDataResponse {
         response: intent_msg,
-        signature: Hex::encode(sig),
+        signature: sig.as_ref().to_vec(),
     }
 }
 

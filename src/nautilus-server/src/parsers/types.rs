@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use sui_sdk_types::{Address, TypeTag};
+use std::collections::HashMap;
 
 // ============================================================================
 // REQUEST TYPES
@@ -31,10 +32,13 @@ pub enum Request {
 pub struct ProcessedPoolData {
     pub request: Request,
     pub auto_rebalance_strategy: Option<AutoRebalanceStrategy>,
+    pub position_liquidity: u128,
     pub dex: SupportedDex,
     pub position_registry_id: u64,
     pub coin_a_type: TypeTag,
     pub coin_b_type: TypeTag,
+    pub balances_bag: BalancesBag,
+    pub rewarder_coin_types: Vec<TypeTag>,
 }
 
 // ============================================================================
@@ -166,6 +170,11 @@ pub enum Position {
     Cetus(CetusPosition),
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct BalancesBag {
+    pub balances: HashMap<String, u64>,
+}
+
 // ============================================================================
 // STRATEGY TYPES
 // ============================================================================
@@ -173,7 +182,6 @@ pub enum Position {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AutoRebalanceStrategy {
     pub id: String,
-    pub version: u64,
     pub owner: String,
     pub position_registry_id: u64,
     pub description: String,
@@ -182,7 +190,8 @@ pub struct AutoRebalanceStrategy {
     pub lower_sqrt_price_change_threshold_direction: bool, // true = in range, false = out of range
     pub upper_sqrt_price_change_threshold_direction: bool, // true = in range, false = out of range
     pub rebalance_cooldown_secs: u64,
-    pub range_multiplier: u64,
+    pub range_multiplier_lower: u64,
+    pub range_multiplier_upper: u64,
     pub rebalance_max_tick: I32Wrapper,
     pub rebalance_min_tick: I32Wrapper,
     pub rebalance_paused: bool,

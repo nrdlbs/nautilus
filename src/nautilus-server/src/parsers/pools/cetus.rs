@@ -1,7 +1,10 @@
 use std::collections::BTreeMap;
 use prost_types::Value;
+use sui_sdk_types::StructTag;
+use sui_sdk_types::TypeTag;
 use crate::parsers::common::*;
 use crate::parsers::types::*;
+use std::str::FromStr;
 
 pub fn map_pool_data(value: &Box<Value>) -> Result<CetusPoolData, anyhow::Error> {
     // Extract struct fields from prost Value
@@ -34,6 +37,8 @@ pub fn map_pool_data(value: &Box<Value>) -> Result<CetusPoolData, anyhow::Error>
         tick_spacing: extract_number_from_fields(fields, "tick_spacing")?,
         url: extract_string_from_fields(fields, "url")?,
     };
+
+    println!("pool_data: {:?}", pool_data.rewarder_manager.rewarders.iter().map(|rewarder| TypeTag::Struct(Box::new(StructTag::from_str(&format!("0x{}", rewarder.reward_coin.name)).unwrap()))).collect::<Vec<_>>());
     
     Ok(pool_data)
 }

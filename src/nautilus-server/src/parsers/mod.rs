@@ -1,20 +1,11 @@
-#![feature(core_intrinsics)]
-
-use base64ct::{Base64, Encoding};
 use sui_graphql_client::Client as GraphQLClient;
-use sui_rpc::client::AuthInterceptor;
-use sui_rpc::field::FieldMask;
-use sui_rpc::proto::sui::rpc::v2beta2::ledger_service_client::LedgerServiceClient;
-use sui_rpc::proto::sui::rpc::v2beta2::live_data_service_client::LiveDataServiceClient;
-use sui_rpc::proto::sui::rpc::v2beta2::GetObjectRequest;
-use sui_rpc::proto::sui::rpc::v2beta2::ListDynamicFieldsRequest;
 use sui_rpc::proto::sui::rpc::v2beta2::Object;
 use sui_sdk_types::Address;
 use sui_sdk_types::TypeTag;
 use sui_sdk_types::StructTag;
 use std::str::FromStr;
-use tonic::codegen::InterceptedService;
-use tonic::transport::Channel;
+use crate::aggregator::cetus;
+use crate::transactions_builder::constant::REGISTRY_BAG_OBJECT_ID;
 
 pub mod common;
 pub mod pools;
@@ -23,8 +14,6 @@ pub mod strategies;
 pub mod types;
 
 pub use types::{SupportedDex, *};
-
-const BAG_OBJECT_ID: &str = "0x47f27839b9cbb864bf9a93223eb7c97aee04788fc2603edf56200909aa672ca8";
 
 /// Helper function để format coin type string với prefix 0x nếu cần thiết
 fn format_coin_type(coin_type: &str) -> String {
@@ -60,7 +49,7 @@ pub async fn into_processed_pool_data<'a>(
     // filter out
     let position_field = graphql_client
         .dynamic_field(
-            Address::from_hex(BAG_OBJECT_ID)
+            Address::from_hex(REGISTRY_BAG_OBJECT_ID)
                 .unwrap(),
             TypeTag::U64,
             position_registry_id,
@@ -71,20 +60,23 @@ pub async fn into_processed_pool_data<'a>(
         .unwrap();
 
     let position_json = serde_json::to_value(&position_field)?;
-    let position_data = positions::try_match(Box::new(position_json))?;
+    let position_data = positions::try_match(Box::new(position_json.clone()))?; 
+    let balances_bag = positions::map_position_balances_data(&Box::new(position_json.clone()))?;
 
-    let (current_tick, current_sqrt_price, tick_spacing, dex) =
+    let (current_tick, current_sqrt_price, tick_spacing, dex, rewarder_coin_types) =
         match pool_data {
             Pool::Cetus(cetus_pool) => (
                 cetus_pool.current_tick_index.bits.parse::<u32>()?,
                 cetus_pool.current_sqrt_price.parse::<u128>()?,
                 cetus_pool.tick_spacing as u32,
                 SupportedDex::Cetus,
+                cetus_pool.rewarder_manager.rewarders.iter().map(|rewarder| TypeTag::Struct(Box::new(StructTag::from_str(&format!("0x{}", rewarder.reward_coin.name)).unwrap()))).collect::<Vec<_>>(),
             ),
         };
 
-    let (tick_lower, tick_upper, coin_a_type, coin_b_type) = match position_data {
+    let (tick_lower, tick_upper, coin_a_type, coin_b_type, position_liquidity) = match position_data {
         Position::Cetus(cetus_position) => {
+            println!("cetus_position: {:?}", cetus_position);
             let formatted_coin_a = format_coin_type(&cetus_position.coin_type_a.name);
             let formatted_coin_b = format_coin_type(&cetus_position.coin_type_b.name);
             (
@@ -92,6 +84,7 @@ pub async fn into_processed_pool_data<'a>(
                 cetus_position.tick_upper_index.bits.parse::<u32>()?,
                 TypeTag::Struct(Box::new(StructTag::from_str(&formatted_coin_a)?)),
                 TypeTag::Struct(Box::new(StructTag::from_str(&formatted_coin_b)?)),
+                cetus_position.liquidity,
             )
         },
     };
@@ -109,8 +102,6 @@ pub async fn into_processed_pool_data<'a>(
         _ => return Err(anyhow::anyhow!("Unknown strategy type")),
     };
 
-    println!("request: {:?}", request);
-
     let auto_rebalance_strategy = match &strategy_data {
         Strategy::AutoRebalance(auto_rebalance) => Some(auto_rebalance.clone()),
         _ => None,
@@ -123,5 +114,8 @@ pub async fn into_processed_pool_data<'a>(
         position_registry_id,
         coin_a_type,
         coin_b_type,
+        position_liquidity,
+        balances_bag,
+        rewarder_coin_types,
     })
 }

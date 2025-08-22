@@ -107,7 +107,13 @@ pub async fn execute_and_wait_for_effects(
             Ok(result) => {
                 println!("dry run result: {:?}", result);
                 if let Some(effects) = result.effects {
-                    return Ok(effects);
+                    let status = effects.status();
+                    if status == &ExecutionStatus::Success {
+                        println!("dry run success");
+                    } else {
+                        println!("dry run failed");
+                        return Err(SuiUtilsError::TransactionExecutionError("Dry run failed".to_string()));
+                    }
                 } else {
                     return Err(SuiUtilsError::TransactionExecutionError("Dry run failed - no effects".to_string()));
                 }
@@ -340,4 +346,12 @@ pub async fn get_dynamic_fields(client: &Client, id: Address) -> Result<Vec<Dyna
     }
 
     Ok(dfs)
+}
+
+pub fn tick_to_i32(tick: u32) -> i32 {
+    if tick >= 2u32.pow(31) {
+        (tick as i32) - 2u32.pow(32) as i32
+    } else {
+        tick as i32
+    }
 }
